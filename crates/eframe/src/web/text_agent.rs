@@ -82,10 +82,16 @@ impl TextAgent {
             let input_state = input_state.clone();
             move |event: web_sys::InputEvent, runner: &mut AppRunner| {
                 let text = input_state.input().value();
-                // Fix android virtual keyboard Gboard
-                // This removes the virtual keyboard's suggestion.
+                // Workaround for an Android Gboard issue: after typing a word,
+                // the user must delete invisible characters (whose count
+                // matches the length of the current suggestion) before actual
+                // characters are deleted.
+                //
+                // this issue appears to have been fixed in Gboard sometime
+                // between versions 14.7.09 and 17.0.12.
                 if !event.is_composing() {
-                    input_state.interrupt_composition();
+                    input_state.input().blur().ok();
+                    input_state.input().focus().ok();
                 }
                 // if `is_composing` is true, then user is using IME, for example: emoji, pinyin, kanji, hangul, etc.
                 // In that case, the browser emits both `input` and `compositionupdate` events,
