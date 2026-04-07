@@ -137,6 +137,12 @@ impl TextAgent {
 
         let Some(ime) = ime else { return Ok(()) };
 
+        if ime.should_interrupt_composition {
+            // Currently a no-op: the text agent is sizeless, so any click
+            // shifts focus to the canvas, which naturally interrupts the
+            // composition.
+        }
+
         let mut canvas_rect = super::canvas_content_rect(canvas);
         // Fix for safari with virtual keyboard flapping position
         if super::utils::is_mobile_safari() {
