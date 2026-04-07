@@ -9,33 +9,8 @@ use web_sys::{Document, Node};
 use super::{AppRunner, WebRunner};
 
 pub struct TextAgent {
-    input_state: InputState,
-    prev_ime_output: Cell<Option<egui::output::IMEOutput>>,
-}
-
-#[derive(Clone)]
-struct InputState {
     input: web_sys::HtmlInputElement,
-}
-
-impl InputState {
-    fn new(input: web_sys::HtmlInputElement) -> Self {
-        Self { input }
-    }
-
-    fn input(&self) -> &web_sys::HtmlInputElement {
-        &self.input
-    }
-
-    fn interrupt_composition(&self) {
-        self.input.set_value("");
-    }
-}
-
-impl Drop for InputState {
-    fn drop(&mut self) {
-        self.input.remove();
-    }
+    prev_ime_output: Cell<Option<egui::output::IMEOutput>>,
 }
 
 impl TextAgent {
@@ -51,10 +26,9 @@ impl TextAgent {
         let input = input.dyn_into::<web_sys::HtmlInputElement>()?;
         input.set_type("text");
         input.set_attribute("autocapitalize", "off")?;
-        let input_state = InputState::new(input.clone());
 
         // append it to `<body>` and hide it outside of the viewport
-        let style = input_state.input().style();
+        let style = input.style();
         style.set_property("background-color", "transparent")?;
         style.set_property("border", "none")?;
         style.set_property("outline", "none")?;
@@ -70,18 +44,18 @@ impl TextAgent {
             root.dyn_into::<Document>()?
                 .body()
                 .unwrap()
-                .append_child(input_state.input())?;
+                .append_child(&input)?;
         } else {
             // append input into root directly
-            root.append_child(input_state.input())?;
+            root.append_child(&input)?;
         }
 
         // attach event listeners
 
         let on_input = {
-            let input_state = input_state.clone();
+            let input = input.clone();
             move |event: web_sys::InputEvent, runner: &mut AppRunner| {
-                let text = input_state.input().value();
+                let text = input.value();
                 // Workaround for an Android Gboard issue: after typing a word,
                 // the user must delete invisible characters (whose count
                 // matches the length of the current suggestion) before actual
@@ -90,14 +64,14 @@ impl TextAgent {
                 // this issue appears to have been fixed in Gboard sometime
                 // between versions 14.7.09 and 17.0.12.
                 if !event.is_composing() {
-                    input_state.input().blur().ok();
-                    input_state.input().focus().ok();
+                    input.blur().ok();
+                    input.focus().ok();
                 }
                 // if `is_composing` is true, then user is using IME, for example: emoji, pinyin, kanji, hangul, etc.
                 // In that case, the browser emits both `input` and `compositionupdate` events,
                 // and we need to ignore the `input` event.
                 if !text.is_empty() && !event.is_composing() {
-                    input_state.input().set_value("");
+                    input.set_value("");
                     let event = egui::Event::Text(text);
                     runner.input.raw.events.push(event);
                     runner.needs_repaint.repaint_asap();
@@ -123,10 +97,10 @@ impl TextAgent {
         };
 
         let on_composition_end = {
-            let input_state = input_state.clone();
+            let input = input.clone();
             move |event: web_sys::CompositionEvent, runner: &mut AppRunner| {
                 let Some(text) = event.data() else { return };
-                input_state.input().set_value("");
+                input.set_value("");
                 let event = egui::Event::Ime(egui::ImeEvent::Commit(text));
                 runner.input.raw.events.push(event);
                 runner.needs_repaint.repaint_asap();
@@ -144,7 +118,7 @@ impl TextAgent {
         runner_ref.add_event_listener(&input, "keyup", super::events::on_keyup)?;
 
         Ok(Self {
-            input_state,
+            input,
             prev_ime_output: Default::default(),
         })
     }
@@ -163,10 +137,6 @@ impl TextAgent {
 
         let Some(ime) = ime else { return Ok(()) };
 
-        if ime.should_interrupt_composition {
-            self.input_state.interrupt_composition();
-        }
-
         let mut canvas_rect = super::canvas_content_rect(canvas);
         // Fix for safari with virtual keyboard flapping position
         if super::utils::is_mobile_safari() {
@@ -174,7 +144,7 @@ impl TextAgent {
         }
         let cursor_rect = ime.cursor_rect.translate(canvas_rect.min.to_vec2());
 
-        let style = self.input_state.input().style();
+        let style = self.input.style();
 
         // This is where the IME input will point to:
         style.set_property(
@@ -198,7 +168,7 @@ impl TextAgent {
     }
 
     pub fn has_focus(&self) -> bool {
-        super::has_focus(self.input_state.input())
+        super::has_focus(&self.input)
     }
 
     pub fn focus(&self) {
@@ -208,7 +178,7 @@ impl TextAgent {
 
         log::trace!("Focusing text agent");
 
-        if let Err(err) = self.input_state.input().focus() {
+        if let Err(err) = self.input.focus() {
             log::error!("failed to set focus: {}", super::string_from_js_value(&err));
         }
     }
@@ -220,8 +190,14 @@ impl TextAgent {
 
         log::trace!("Blurring text agent");
 
-        if let Err(err) = self.input_state.input().blur() {
+        if let Err(err) = self.input.blur() {
             log::error!("failed to set focus: {}", super::string_from_js_value(&err));
         }
+    }
+}
+
+impl Drop for TextAgent {
+    fn drop(&mut self) {
+        self.input.remove();
     }
 }
