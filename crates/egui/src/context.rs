@@ -405,6 +405,10 @@ struct ContextImpl {
     is_accesskit_enabled: bool,
 
     loaders: Arc<Loaders>,
+
+    /// Whether to inform the backend to interrupt any ongoing IME composition
+    /// this pass.
+    should_interrupt_ime: bool,
 }
 
 impl ContextImpl {
@@ -2409,6 +2413,15 @@ impl Context {
         #[cfg(debug_assertions)]
         self.debug_painting();
 
+        if self.memory(|mem| {
+            mem.interaction().is_using_pointer()
+                || mem
+                    .focus()
+                    .is_none_or(|focus| focus.is_focus_changed_recently())
+        }) {
+            self.interrupt_ime();
+        }
+
         let mut output = self.write(|ctx| ctx.end_pass());
 
         let plugins = self.read(|ctx| ctx.plugins.ordered_plugins());
@@ -2610,6 +2623,13 @@ impl ContextImpl {
         let textures_delta = self.tex_manager.0.write().take_delta();
 
         let mut platform_output: PlatformOutput = std::mem::take(&mut viewport.output);
+
+        if self.should_interrupt_ime {
+            self.should_interrupt_ime = false;
+            if let Some(ime) = &mut platform_output.ime {
+                ime.should_interrupt_composition = true;
+            }
+        }
 
         {
             profiling::scope!("accesskit");
@@ -4266,6 +4286,27 @@ impl Context {
         dragged.is_some() && dragged != Some(not_this)
     }
 }
+
+/// ## IME
+impl Context {
+    /// Check if the widget owns IME events.
+    ///
+    /// A widget should only consume IME events if this returns `true`. At most
+    /// one widget can own IME events for each frame.
+    #[inline(always)]
+    pub fn owns_ime_events(&self, id: Id) -> bool {
+        self.memory(|mem| mem.has_focus(id))
+    }
+
+    /// Interrupt the current IME composition, if any.
+    #[inline(always)]
+    pub fn interrupt_ime(&self) {
+        self.write(|ctx| ctx.should_interrupt_ime = true);
+    }
+}
+
+/// ## IME
+impl ContextImpl {}
 
 #[test]
 fn context_impl_send_sync() {
