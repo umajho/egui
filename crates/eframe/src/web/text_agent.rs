@@ -57,9 +57,9 @@ impl TextAgent {
             move |event: web_sys::InputEvent, runner: &mut AppRunner| {
                 let text = input.value();
                 // Workaround for an Android Gboard issue: after typing a word,
-                // the user must delete invisible characters (whose count
+                // the user has to delete invisible characters (whose count
                 // matches the length of the current suggestion) before actual
-                // characters are deleted.
+                // characters are deleted, unless the focus has been reset.
                 //
                 // this issue appears to have been fixed in Gboard sometime
                 // between versions 14.7.09 and 17.0.12.
@@ -138,8 +138,8 @@ impl TextAgent {
         let Some(ime) = ime else { return Ok(()) };
 
         if ime.should_interrupt_composition {
-            // Currently a no-op: the text agent is sizeless, so any click
-            // shifts focus to the canvas, which naturally interrupts the
+            // no-op for now: currently ,the text agent is sizeless, so any
+            // click shifts focus to the canvas, which naturally interrupts the
             // composition.
         }
 
