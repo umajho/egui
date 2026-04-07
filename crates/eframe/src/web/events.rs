@@ -777,7 +777,7 @@ fn install_touchend(runner_ref: &WebRunner, target: &EventTarget) -> Result<(), 
 
             // Fix virtual keyboard IOS
             // Need call focus at the same time of event
-            if super::utils::is_mobile_safari() && runner.text_agent.has_focus() {
+            if runner.text_agent.has_focus() {
                 runner.text_agent.set_focus(false);
                 runner.text_agent.set_focus(true);
             }
