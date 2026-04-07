@@ -9,8 +9,33 @@ use web_sys::{Document, Node};
 use super::{AppRunner, WebRunner};
 
 pub struct TextAgent {
-    input: web_sys::HtmlInputElement,
+    input_state: InputState,
     prev_ime_output: Cell<Option<egui::output::IMEOutput>>,
+}
+
+#[derive(Clone)]
+struct InputState {
+    input: web_sys::HtmlInputElement,
+}
+
+impl InputState {
+    fn new(input: web_sys::HtmlInputElement) -> Self {
+        Self { input }
+    }
+
+    fn input(&self) -> &web_sys::HtmlInputElement {
+        &self.input
+    }
+
+    fn interrupt_composition(&self) {
+        self.input.set_value("");
+    }
+}
+
+impl Drop for InputState {
+    fn drop(&mut self) {
+        self.input.remove();
+    }
 }
 
 impl TextAgent {
@@ -26,9 +51,10 @@ impl TextAgent {
         let input = input.dyn_into::<web_sys::HtmlInputElement>()?;
         input.set_type("text");
         input.set_attribute("autocapitalize", "off")?;
+        let input_state = InputState::new(input.clone());
 
         // append it to `<body>` and hide it outside of the viewport
-        let style = input.style();
+        let style = input_state.input().style();
         style.set_property("background-color", "transparent")?;
         style.set_property("border", "none")?;
         style.set_property("outline", "none")?;
@@ -44,29 +70,28 @@ impl TextAgent {
             root.dyn_into::<Document>()?
                 .body()
                 .unwrap()
-                .append_child(&input)?;
+                .append_child(input_state.input())?;
         } else {
             // append input into root directly
-            root.append_child(&input)?;
+            root.append_child(input_state.input())?;
         }
 
         // attach event listeners
 
         let on_input = {
-            let input = input.clone();
+            let input_state = input_state.clone();
             move |event: web_sys::InputEvent, runner: &mut AppRunner| {
-                let text = input.value();
+                let text = input_state.input().value();
                 // Fix android virtual keyboard Gboard
                 // This removes the virtual keyboard's suggestion.
                 if !event.is_composing() {
-                    input.blur().ok();
-                    input.focus().ok();
+                    input_state.interrupt_composition();
                 }
                 // if `is_composing` is true, then user is using IME, for example: emoji, pinyin, kanji, hangul, etc.
                 // In that case, the browser emits both `input` and `compositionupdate` events,
                 // and we need to ignore the `input` event.
                 if !text.is_empty() && !event.is_composing() {
-                    input.set_value("");
+                    input_state.input().set_value("");
                     let event = egui::Event::Text(text);
                     runner.input.raw.events.push(event);
                     runner.needs_repaint.repaint_asap();
@@ -92,10 +117,10 @@ impl TextAgent {
         };
 
         let on_composition_end = {
-            let input = input.clone();
+            let input_state = input_state.clone();
             move |event: web_sys::CompositionEvent, runner: &mut AppRunner| {
                 let Some(text) = event.data() else { return };
-                input.set_value("");
+                input_state.input().set_value("");
                 let event = egui::Event::Ime(egui::ImeEvent::Commit(text));
                 runner.input.raw.events.push(event);
                 runner.needs_repaint.repaint_asap();
@@ -113,7 +138,7 @@ impl TextAgent {
         runner_ref.add_event_listener(&input, "keyup", super::events::on_keyup)?;
 
         Ok(Self {
-            input,
+            input_state,
             prev_ime_output: Default::default(),
         })
     }
@@ -132,6 +157,10 @@ impl TextAgent {
 
         let Some(ime) = ime else { return Ok(()) };
 
+        if ime.should_interrupt_composition {
+            self.input_state.interrupt_composition();
+        }
+
         let mut canvas_rect = super::canvas_content_rect(canvas);
         // Fix for safari with virtual keyboard flapping position
         if is_mobile_safari() {
@@ -139,7 +168,7 @@ impl TextAgent {
         }
         let cursor_rect = ime.cursor_rect.translate(canvas_rect.min.to_vec2());
 
-        let style = self.input.style();
+        let style = self.input_state.input().style();
 
         // This is where the IME input will point to:
         style.set_property(
@@ -163,7 +192,7 @@ impl TextAgent {
     }
 
     pub fn has_focus(&self) -> bool {
-        super::has_focus(&self.input)
+        super::has_focus(self.input_state.input())
     }
 
     pub fn focus(&self) {
@@ -173,7 +202,7 @@ impl TextAgent {
 
         log::trace!("Focusing text agent");
 
-        if let Err(err) = self.input.focus() {
+        if let Err(err) = self.input_state.input().focus() {
             log::error!("failed to set focus: {}", super::string_from_js_value(&err));
         }
     }
@@ -185,15 +214,9 @@ impl TextAgent {
 
         log::trace!("Blurring text agent");
 
-        if let Err(err) = self.input.blur() {
+        if let Err(err) = self.input_state.input().blur() {
             log::error!("failed to set focus: {}", super::string_from_js_value(&err));
         }
-    }
-}
-
-impl Drop for TextAgent {
-    fn drop(&mut self) {
-        self.input.remove();
     }
 }
 
