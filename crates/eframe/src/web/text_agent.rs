@@ -163,7 +163,7 @@ impl TextAgent {
 
         let mut canvas_rect = super::canvas_content_rect(canvas);
         // Fix for safari with virtual keyboard flapping position
-        if is_mobile_safari() {
+        if super::utils::is_mobile_safari() {
             canvas_rect.min.y = canvas.offset_top() as f32;
         }
         let cursor_rect = ime.cursor_rect.translate(canvas_rect.min.to_vec2());
@@ -218,17 +218,4 @@ impl TextAgent {
             log::error!("failed to set focus: {}", super::string_from_js_value(&err));
         }
     }
-}
-
-/// Returns `true` if the app is likely running on a mobile device on navigator Safari.
-fn is_mobile_safari() -> bool {
-    (|| {
-        let user_agent = web_sys::window()?.navigator().user_agent().ok()?;
-        let is_ios = user_agent.contains("iPhone")
-            || user_agent.contains("iPad")
-            || user_agent.contains("iPod");
-        let is_safari = user_agent.contains("Safari");
-        Some(is_ios && is_safari)
-    })()
-    .unwrap_or(false)
 }
